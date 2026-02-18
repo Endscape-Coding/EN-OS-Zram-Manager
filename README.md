@@ -15,8 +15,14 @@ Usage:
 
 ##Screenshots
 
-| ![zram-manager](https://github.com/Endscape-Coding/EN-OS-Zram-Manager/blob/main/images/zram-manager.png) |
+<div align="center">
 
-| ![zram-manager --install](https://github.com/Endscape-Coding/EN-OS-Zram-Manager/blob/main/images/zram-manager1.png) |
+| zram-manager | zram-manager --install |
+| :---: | :---: |
+| ![zram-manager](https://github.com/Endscape-Coding/EN-OS-Zram-Manager/blob/main/images/zram-manager.png) | ![zram-manager --install](https://github.com/Endscape-Coding/EN-OS-Zram-Manager/blob/main/images/zram-manager1.png) |
 
-| ![zram-manager --uninstall](https://github.com/Endscape-Coding/EN-OS-Zram-Manager/blob/main/images/zram-manager2.png) |
+| zram-manager --install | zram-manager --help |
+| :---: | :---: |
+| ![zram-manager --uninstall](https://github.com/Endscape-Coding/EN-OS-Zram-Manager/blob/main/images/zram-manager2.png) | ![zram-manager --help](https://github.com/Endscape-Coding/EN-OS-Zram-Manager/blob/main/images/zram-manager3.png) |
+
+</div>
