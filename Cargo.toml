@@ -1,0 +1,11 @@
+[package]
+name = "zram-manager"
+version = "1.0"
+edition = "2024"
+
+[dependencies]
+crossterm = "0.27"
+sysinfo = "0.38.2"
+clap = { version = "4", features = ["derive"] }
+colored = "3.1.1"
+is-root = "0.1.3"
