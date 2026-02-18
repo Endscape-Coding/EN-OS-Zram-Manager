@@ -1,19 +1,19 @@
 # EN-OS-Zram-Manager
-##Universal ZRam manager for EN-OS.
+Universal ZRam manager for EN-OS.
 Version: 1.0
 
 ZRam-Manager works on both EN-OS and other distributions, including Arch Linux, Ubuntu, and any others that support ZRam and Systemd.
 
 Usage:
-  ```zram-manager```: show zram status (algorhytm, size, mountpoint), memory and CPU usage.
-  ```zram-manager -h (--help)```: show available arguments.
-  ```sudo zram-manager --install```: count optimal ZRam size and compress algorhytm in relation to your CPU power and size of your memory.
-  ```sudo zram-manager --install -a (--alg) -g (-gb)```: choose manually compress algorhytm or ZRam size.
-  ```sudo zram-manager --uninstall```: remove ZRam service
+*  `zram-manager`: show zram status (algorhytm, size, mountpoint), memory and CPU usage.
+*  `zram-manager -h (--help)`: show available arguments.
+*  `sudo zram-manager --install`: count optimal ZRam size and compress algorhytm in relation to your CPU power and size of your memory.
+*  `sudo zram-manager --install -a (--alg) -g (-gb)`: choose manually compress algorhytm or ZRam size.
+*  `sudo zram-manager --uninstall`: remove ZRam service
 
-  ```sudo zram-manager -a (--alg) -g (ab)```: Start ZRam with custom algorhytm and ZRam size. ZRam has been reset after reboot.
+*  `sudo zram-manager -a (--alg) -g (ab)`: Start ZRam with custom algorhytm and ZRam size. ZRam has been reset after reboot.
 
-##Screenshots
+Screenshots
 
 <div align="center">
 
