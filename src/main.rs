@@ -295,6 +295,7 @@ fn zram_info() {
 fn main() {
     let _ = Command::new("clear").status();
     println!("{}", LOGO.magenta());
+    println!("{}", "By Endscape".blue());
     let install_check = check_install();
     let args = Args::parse();
 
