@@ -307,9 +307,12 @@ fn main() {
             process::exit(0);
         }
 
-        let (alg_final, gb_final) = match (&args.alg, args.gb) {
-            (Some(a), Some(g)) => (format!("{:?}", a), g),
-            _ => count(),
+        let (aalg, ggb) = {
+            let (countalg, countgb) = count();
+            (
+                args.alg.as_ref().map(|a| format!("{:?}", &a)).unwrap_or(countalg),
+                args.gb.unwrap_or(countgb)
+            )
         };
 
         if install_check {
@@ -330,7 +333,7 @@ fn main() {
             check_cpu()
         );
 
-        let _ = zram_install(&alg_final, gb_final);
+        let _ = zram_install(&aalg, ggb);
     } else if args.uninstall {
         let _ = zram_uninstall();
         println!("{}", "Service uninstalled successfully!".green());
