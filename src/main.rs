@@ -189,58 +189,64 @@ fn check_swap() -> io::Result<Option<SwapInfo>> {
     .output()?;
 
     let content = String::from_utf8_lossy(&output.stdout);
-    let lines: Vec<&str> = content.lines().skip(1).collect();
 
-    if lines.is_empty() {
-        return Ok(None);
+    for line in content.lines().skip(1) {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 3 {
+            continue;
+        }
+
+        let path = parts[0].to_string();
+
+        if path.starts_with("/dev/zram") {
+            continue;
+        }
+
+        let swap_type = parts[1].to_string();
+        let size_kb: u64 = parts[2].parse().unwrap_or(0);
+
+        let device = if swap_type == "partition" {
+            path.clone()
+        } else {
+            let findmnt = Command::new("findmnt")
+            .args(["-n", "-o", "SOURCE", &path])
+            .output()?;
+            String::from_utf8_lossy(&findmnt.stdout).trim().to_string()
+        };
+
+        let blkid = Command::new("blkid")
+        .args(["-s", "UUID", "-o", "value", &device])
+        .output()?;
+        let uuid_raw = String::from_utf8_lossy(&blkid.stdout).trim().to_string();
+        let uuid = if uuid_raw.is_empty() { None } else { Some(uuid_raw) };
+
+        let offset = if swap_type == "file" {
+            match Command::new("filefrag").args(["-v", &path]).output() {
+                Ok(output) => {
+                    let out = String::from_utf8_lossy(&output.stdout);
+                    out.lines()
+                    .find(|l| l.trim().starts_with("0:"))
+                    .and_then(|l| l.split_whitespace().nth(3))
+                    .and_then(|f| f.strip_suffix(':'))
+                    .map(|s| s.to_string())
+                }
+                Err(_) => None,
+            }
+        } else {
+            None
+        };
+
+        return Ok(Some(SwapInfo {
+            path,
+            swap_type,
+            size_kb,
+            device,
+            uuid,
+            offset,
+        }));
     }
 
-    let parts: Vec<&str> = lines[0].split_whitespace().collect();
-    if parts.len() < 3 {
-        return Ok(None);
-    }
-
-    let path = parts[0].to_string();
-    let swap_type = parts[1].to_string();
-    let size_kb: u64 = parts[2].parse().unwrap_or(0);
-
-    let device = if swap_type == "partition" {
-        path.clone()
-    } else {
-        let findmnt = Command::new("findmnt")
-        .args(["-n", "-o", "SOURCE", &path])
-        .output()?;
-        String::from_utf8_lossy(&findmnt.stdout).trim().to_string()
-    };
-
-    let blkid = Command::new("blkid")
-    .args(["-s", "UUID", "-o", "value", &device])
-    .output()?;
-    let uuid_raw = String::from_utf8_lossy(&blkid.stdout).trim().to_string();
-    let uuid = if uuid_raw.is_empty() { None } else { Some(uuid_raw) };
-
-    let offset = if swap_type == "file" {
-        let filefrag = Command::new("filefrag")
-        .args(["-v", &path])
-        .output()?;
-        let output = String::from_utf8_lossy(&filefrag.stdout);
-        output.lines()
-        .find(|l| l.trim().starts_with("0:"))
-        .and_then(|l| l.split_whitespace().nth(3))
-        .and_then(|f| f.strip_suffix(':'))
-        .map(|s| s.to_string())
-    } else {
-        None
-    };
-
-    Ok(Some(SwapInfo {
-        path,
-        swap_type,
-        size_kb,
-        device,
-        uuid,
-        offset,
-    }))
+    Ok(None)
 }
 
 // Основные фукции
@@ -333,8 +339,11 @@ fn zram_on(alg: &str, gb: f64) -> io::Result<()> {
             let _ = Command::new("swapoff").arg("/dev/zram0").status();
         }
 
-        if let Ok(_) = fs::write("/sys/block/zram0/reset", "1") {
-        }
+        fs::write("/sys/block/zram0/reset", "1")
+        .map_err(|e| io::Error::other(format!("Reset failed: {}", e)))?;
+
+        fs::write("/sys/block/zram0/disksize", bytes.to_string())
+        .map_err(|e| io::Error::other(format!("disksize write failed: {}", e)))?;
     }
 
     let zram_path_alg = "/sys/block/zram0/comp_algorithm";
