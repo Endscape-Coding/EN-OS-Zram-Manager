@@ -34,6 +34,16 @@ struct Args {
     uninstall: bool,
 }
 
+#[derive(Debug, Clone)]
+struct SwapInfo {
+    path: String,
+    swap_type: String,
+    size_kb: u64,
+    device: String,
+    uuid: Option<String>,
+    offset: Option<String>,
+}
+
 const LOGO: &str = r#" _____ _   _        ___  ____    _________                   __  __
 | ____| \ | |      / _ \/ ___|  |__  /  _ \ __ _ _ __ ___   |  \/  | __ _ _ __   __ _  __ _  ___ _ __
 |  _| |  \| |_____| | | \___ \    / /| |_) / _` | '_ ` _ \  | |\/| |/ _` | '_ \ / _` |/ _` |/ _ \ '__|
@@ -150,9 +160,126 @@ fn count() -> (String, f64) {
     (alg, gb)
 }
 
-// Основные фукции
+fn save_resume_params(info: &SwapInfo) -> io::Result<()> {
+    let uuid = match &info.uuid {
+        Some(u) => u,
+        None => {
+            println!("{}", "Cannot get UUID, skipping resume config".yellow());
+            return Ok(());
+        }
+    };
 
+    let params = if info.swap_type == "file" && info.offset.is_some() {
+        format!("resume=UUID={} resume_offset={}", uuid, info.offset.as_ref().unwrap())
+    } else {
+        format!("resume=UUID={}", uuid)
+    };
+
+    fs::write("/etc/zram-manager.resume", &params)?;
+
+    println!("\n{}", "Add to bootloader config:".cyan());
+    println!("{}", params.green());
+
+    Ok(())
+}
+
+fn check_swap() -> io::Result<Option<SwapInfo>> {
+    let output = Command::new("cat")
+    .arg("/proc/swaps")
+    .output()?;
+
+    let content = String::from_utf8_lossy(&output.stdout);
+    let lines: Vec<&str> = content.lines().skip(1).collect();
+
+    if lines.is_empty() {
+        return Ok(None);
+    }
+
+    let parts: Vec<&str> = lines[0].split_whitespace().collect();
+    if parts.len() < 3 {
+        return Ok(None);
+    }
+
+    let path = parts[0].to_string();
+    let swap_type = parts[1].to_string();
+    let size_kb: u64 = parts[2].parse().unwrap_or(0);
+
+    let device = if swap_type == "partition" {
+        path.clone()
+    } else {
+        let findmnt = Command::new("findmnt")
+        .args(["-n", "-o", "SOURCE", &path])
+        .output()?;
+        String::from_utf8_lossy(&findmnt.stdout).trim().to_string()
+    };
+
+    let blkid = Command::new("blkid")
+    .args(["-s", "UUID", "-o", "value", &device])
+    .output()?;
+    let uuid_raw = String::from_utf8_lossy(&blkid.stdout).trim().to_string();
+    let uuid = if uuid_raw.is_empty() { None } else { Some(uuid_raw) };
+
+    let offset = if swap_type == "file" {
+        let filefrag = Command::new("filefrag")
+        .args(["-v", &path])
+        .output()?;
+        let output = String::from_utf8_lossy(&filefrag.stdout);
+        output.lines()
+        .find(|l| l.trim().starts_with("0:"))
+        .and_then(|l| l.split_whitespace().nth(3))
+        .and_then(|f| f.strip_suffix(':'))
+        .map(|s| s.to_string())
+    } else {
+        None
+    };
+
+    Ok(Some(SwapInfo {
+        path,
+        swap_type,
+        size_kb,
+        device,
+        uuid,
+        offset,
+    }))
+}
+
+// Основные фукции
 fn zram_install(alg: &str, gb: f64) -> io::Result<()> {
+    let swap_info = check_swap()?;
+
+    match &swap_info {
+        Some(info) => {
+            println!("{}", "Swap detected:".green());
+            println!("Path: {}", info.path.cyan());
+            println!("Type: {}", info.swap_type.cyan());
+            println!("Size: {:.1} GB", info.size_kb as f64 / 1024.0 / 1024.0);
+            println!("Device: {}", info.device.cyan());
+
+            if let Some(uuid) = &info.uuid {
+                println!("UUID: {}", uuid.cyan());
+            }
+
+            if info.swap_type == "file" {
+                if let Some(offset) = &info.offset {
+                    println!("Offset: {}", offset.cyan());
+                }
+            }
+
+            let mut sys = System::new();
+            sys.refresh_memory();
+            let memorykb = check_memory(&mut sys) * 1024.0 * 1024.0;
+            if info.size_kb < memorykb as u64{
+                println!("{}", "Swap size < RAM, hibernation may fail!".yellow());
+            }
+            save_resume_params(info)?;
+
+        }
+        None => {
+            println!("{}", "No active swap found.".yellow());
+            println!("Zram will work, but hibernation will be disabled.");
+        }
+    }
+
     let service_path = "/etc/systemd/system/zram.service";
     let service_path = Path::new(&service_path);
     let config = format!(
@@ -192,13 +319,23 @@ WantedBy=multi-user.target
 
 fn zram_on(alg: &str, gb: f64) -> io::Result<()> {
     println!("Zram-start");
-    let _bytes = (gb * 1024.0 * 1024.0 * 1024.0) as u64;
+    let bytes = (gb * 1024.0 * 1024.0 * 1024.0) as u64;
 
     run_cmd("modprobe", &["zram", "num_devices=1"])?;
 
-    let _ = Command::new("swapoff").arg("/dev/zram0").status();
+    if Path::new("/dev/zram0").exists() {
+        let swap_check = Command::new("swapon")
+        .arg("--show")
+        .output()?;
 
-    fs::write("/sys/block/zram0/reset", "1")?;
+        let swap_output = String::from_utf8_lossy(&swap_check.stdout);
+        if swap_output.contains("/dev/zram0") {
+            let _ = Command::new("swapoff").arg("/dev/zram0").status();
+        }
+
+        if let Ok(_) = fs::write("/sys/block/zram0/reset", "1") {
+        }
+    }
 
     let zram_path_alg = "/sys/block/zram0/comp_algorithm";
     let zram_path_str = "/sys/block/zram0/max_comp_streams";
@@ -223,8 +360,14 @@ fn zram_on(alg: &str, gb: f64) -> io::Result<()> {
     };
 
     fs::write(zram_path_alg, algoritm)?;
-    fs::write(zram_path_str, cores.to_string())?;
-    fs::write(zram_path_dsk, _bytes.to_string())?;
+
+    if Path::new(zram_path_str).exists() {
+        fs::write(zram_path_str, cores.to_string())?;
+    }
+
+    if Path::new(zram_path_dsk).exists() {
+        fs::write(zram_path_dsk, bytes.to_string())?;
+    }
 
     run_cmd("mkswap", &["/dev/zram0"])?;
     run_cmd("swapon", &["/dev/zram0", "-p", "100"])?;
